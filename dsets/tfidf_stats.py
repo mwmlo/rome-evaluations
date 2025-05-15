@@ -31,7 +31,10 @@ def get_tfidf_vectorizer(data_dir: str):
         vocab = json.load(f)
 
     class MyVectorizer(TfidfVectorizer):
-        TfidfVectorizer.idf_ = idf
+
+        def __init__(self):
+            super().__init__()
+            self.idf_ = idf
 
     vec = MyVectorizer()
     vec.vocabulary_ = vocab

@@ -1,5 +1,7 @@
 import json
 import os
+os.environ['HF_HOME'] = '/vol/bitbucket/mwl21/'
+
 import ast
 import re
 import shutil
