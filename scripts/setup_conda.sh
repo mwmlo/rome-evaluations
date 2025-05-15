@@ -42,7 +42,11 @@ then
     exit 1
 fi
 
-CUDA_DIR="/usr/local/cuda-11.1"
+# Set up CUDA on lab machines
+. /vol/cuda/12.0.0/setup.sh
+
+# CUDA_DIR="/usr/local/cuda-11.1"
+CUDA_DIR="/vol/cuda/12.0.0"
 if [[ ! -d ${CUDA_DIR} ]]
 then
     echo "Environment requires ${CUDA_DIR}, not found."
