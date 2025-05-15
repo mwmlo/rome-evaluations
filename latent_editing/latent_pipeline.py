@@ -193,8 +193,8 @@ def optimise_edit_components(
 
 def edit_model(
     model: HookedTransformer,
-    original_prompt: str,
-    rewrite_prompt: str,
+    original_prompts: list[str],
+    rewrite_prompts: list[str],
     answer_labels: Tensor,
     n_epochs=5,
     overwrite=False,
@@ -203,10 +203,9 @@ def edit_model(
     n_samples = len(original_prompts)
 
     # Tokenise all together to ensure shapes stay the same
-    tokenised = model.to_tokens([original_prompt, rewrite_prompt], prepend_bos=False)
-    # original_tokens, rewrite_tokens = [tokenised[i:i + n_samples] for i in range(0, len(tokenised), n_samples)]
-    original_tokens, rewrite_tokens = tokenised[0], tokenised[1]
-    # print(original_tokens.shape, rewrite_tokens.shape)
+    tokenised = model.to_tokens(original_prompts + rewrite_prompts, prepend_bos=False)
+    original_tokens, rewrite_tokens = [tokenised[i:i + n_samples] for i in range(0, len(tokenised), n_samples)]
+    print(n_samples, original_tokens.shape, rewrite_tokens.shape)
 
     original_logits, original_cache = model.run_with_cache(original_tokens)
     original_logit_diff = logit_diff_metric(original_logits, answer_labels)
@@ -244,9 +243,9 @@ def edit_model(
     optimiser = optim.Adam(relevant_parameters, lr=2e-4)
     
     for _ in range(n_epochs):
-        forget_logits = model_copy(original_prompt)[:, -1, :]
-        rewrite_logits = model_copy(rewrite_prompt)[:, -1, :]
-        answer_index = answer_labels[1].unsqueeze(0)  # Aim for rewritten answer
+        forget_logits = model_copy(original_prompts[0])[:, -1, :]
+        rewrite_logits = model_copy(original_prompts[0])[:, -1, :]
+        answer_index = answer_labels[:, 1]  # Aim for rewritten answer
         
         optimise_edit_components(
             model_copy, forget_logits, rewrite_logits, answer_index, target_mlp[0], target_attn[0], optimiser

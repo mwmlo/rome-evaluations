@@ -20,18 +20,24 @@ def apply_latent_editing_to_model(
     return_orig_weights=False, # Does not do anything for now
 ) -> Tuple[AutoModelForCausalLM, List[str]]:
 
-    hooked_model = HookedTransformer.from_pretrained(model.config.name_or_path)
+    # Need to enable gradients for integrated gradients
+    with torch.enable_grad():
 
-    request = requests[0]
-    text = request["prompt"].format(request["subject"])
-    corrupt_text = request_rewrite["corrupt_prompt"]
-    
-    ground_truth = request_rewrite["target_true"]["str"]
-    target = request_rewrite["target_new"]["str"]
-    original_idx = hooked_model.to_tokens(ground_truth, prepend_bos=False)[0].item()
-    target_idx = hooked_model.to_tokens(target, prepend_bos=False)[0].item()
-    labels = [original_idx, target_idx]
+        hooked_model = HookedTransformer.from_pretrained(hparams.model_name)
+        # Explicitly calculate and expose the result for each attention head
+        hooked_model.set_use_attn_result(True)
+        hooked_model.set_use_hook_mlp_in(True)
 
-    edited_model = edit_model(hooked_model, text, corrupt_text, labels, n_epochs=hparams.n_epochs, overwrite=hparams.overwrite)
+        request = requests[0]
+        text = [request["prompt"].format(request["subject"])]
+        corrupt_text = [request["corrupt_prompt"]]
+        
+        ground_truth = request["target_true"]["str"]
+        target = request["target_new"]["str"]
+        original_idx = hooked_model.to_tokens(ground_truth, prepend_bos=False)[0].item()
+        target_idx = hooked_model.to_tokens(target, prepend_bos=False)[0].item()
+        labels = torch.tensor([[original_idx, target_idx]])
+
+        edited_model = edit_model(hooked_model, text, corrupt_text, labels, n_epochs=hparams.n_epochs, overwrite=hparams.overwrite)
     
     return edited_model, {}

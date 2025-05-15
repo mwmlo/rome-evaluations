@@ -119,7 +119,7 @@ def main(
             if alg_name == "LATENT":
                 template = record["requested_rewrite"]["prompt"]
                 # Get list of corrupt candidate prompts
-                corrupt_prompts = ast.literal_eval(record["attribute_prompts"])
+                corrupt_prompts = record["attribute_prompts"]
 
                 # Choose the corrupt prompt which has the same sentence structure
                 # Convert template to regex pattern (escape and replace {})

@@ -1,5 +1,5 @@
 {
-    "model_name": "gpt2-xl",
+    "model_name": "gpt2-large",
     "n_epochs": 5,
     "overwrite": true
 }

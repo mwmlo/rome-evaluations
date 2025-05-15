@@ -66,6 +66,7 @@ def compute_layer_to_output_attributions(
     ig_embed = LayerIntegratedGradients(
         forward_fn, target_layer, multiply_by_inputs=True
     )
+    print(layer_input.shape, layer_baseline.shape, n_samples)
     attributions, error = ig_embed.attribute(
         inputs=layer_input,
         baselines=layer_baseline,
