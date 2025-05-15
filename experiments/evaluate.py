@@ -1,5 +1,7 @@
 import json
 import os
+import ast
+import re
 import shutil
 from pathlib import Path
 from time import time
@@ -21,6 +23,7 @@ from dsets import (
 from experiments.py.eval_utils_counterfact import compute_rewrite_quality_counterfact
 from experiments.py.eval_utils_zsre import compute_rewrite_quality_zsre
 from rome import ROMEHyperParams, apply_rome_to_model
+from latent_editing import LatentHyperParams, apply_latent_editing_to_model
 from util import nethook
 from util.globals import *
 
@@ -30,6 +33,7 @@ ALG_DICT = {
     "KN": (KNHyperParams, apply_kn_to_model),
     "MEND": (MENDHyperParams, MendRewriteExecutor().apply_to_model),
     "KE": (EFKHyperParams, EfkRewriteExecutor().apply_to_model),
+    "LATENT": (LatentHyperParams, apply_latent_editing_to_model),
 }
 
 DS_DICT = {
@@ -113,15 +117,42 @@ def main(
                 if conserve_memory
                 else dict()
             )
-            edited_model, weights_copy = apply_algo(
-                model,
-                tok,
-                [record["requested_rewrite"]],
-                hparams,
-                copy=False,
-                return_orig_weights=True,
-                **args_conserve_memory,
-            )
+            if alg_name == "latent":
+                template = record["requested_rewrite"]["prompt"]
+                # Get list of corrupt candidate prompts
+                corrupt_prompts = ast.literal_eval(record["attribute_prompts"])
+
+                # Choose the corrupt prompt which has the same sentence structure
+                # Convert template to regex pattern (escape and replace {})
+                template_regex = re.escape(template).replace(r"\{\}", r".+")
+                pattern = re.compile(f"^{template_regex}$")
+
+                corrupt_prompt = corrupt_prompts[0]
+                for corrupt_candidate in corrupt_prompts:
+                    if bool(pattern.fullmatch(corrupt_candidate)):
+                        corrupt_prompt = corrupt_candidate
+
+                # Add corrupt prompt to inputs
+                record["requested_rewrite"]["corrupt_prompt"] = corrupt_prompt
+                edited_model, weights_copy = apply_algo(
+                    model,
+                    tok,
+                    [record["requested_rewrite"]],
+                    hparams,
+                    copy=False,
+                    return_orig_weights=True,
+                    **args_conserve_memory,
+                )
+            else:
+                edited_model, weights_copy = apply_algo(
+                    model,
+                    tok,
+                    [record["requested_rewrite"]],
+                    hparams,
+                    copy=False,
+                    return_orig_weights=True,
+                    **args_conserve_memory,
+                )
             exec_time = time() - start
             print("Execution took", exec_time)
 
