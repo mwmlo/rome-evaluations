@@ -193,8 +193,8 @@ def optimise_edit_components(
 
 def edit_model(
     model: HookedTransformer,
-    original_prompts: list[str],
-    rewrite_prompts: list[str],
+    original_prompt: str,
+    rewrite_prompt: str,
     answer_labels: Tensor,
     n_epochs=5,
     overwrite=False,
@@ -203,8 +203,9 @@ def edit_model(
     n_samples = len(original_prompts)
 
     # Tokenise all together to ensure shapes stay the same
-    tokenised = model.to_tokens(original_prompts + rewrite_prompts, prepend_bos=False)
-    original_tokens, rewrite_tokens = [tokenised[i:i + n_samples] for i in range(0, len(tokenised), n_samples)]
+    tokenised = model.to_tokens([original_prompt, rewrite_prompt], prepend_bos=False)
+    # original_tokens, rewrite_tokens = [tokenised[i:i + n_samples] for i in range(0, len(tokenised), n_samples)]
+    original_tokens, rewrite_tokens = tokenised[0], tokenised[1]
     # print(original_tokens.shape, rewrite_tokens.shape)
 
     original_logits, original_cache = model.run_with_cache(original_tokens)
@@ -234,26 +235,21 @@ def edit_model(
 
     # EDITING STAGE
 
-    edited_models = []
+    print(f"\nFine tuning model on sample {i}...")
 
-    for i in range(n_samples):
-        print(f"\nFine tuning model on sample {i}...")
-
-        model_copy = copy.deepcopy(model)
-        relevant_parameters = [
-            p for name, p in model_copy.named_parameters() if "attn" in name or "mlp" in name
-        ]
-        optimiser = optim.Adam(relevant_parameters, lr=2e-4)
+    model_copy = copy.deepcopy(model)
+    relevant_parameters = [
+        p for name, p in model_copy.named_parameters() if "attn" in name or "mlp" in name
+    ]
+    optimiser = optim.Adam(relevant_parameters, lr=2e-4)
+    
+    for _ in range(n_epochs):
+        forget_logits = model_copy(original_prompt)[:, -1, :]
+        rewrite_logits = model_copy(rewrite_prompt)[:, -1, :]
+        answer_index = answer_labels[1].unsqueeze(0)  # Aim for rewritten answer
         
-        for _ in range(n_epochs):
-            forget_logits = model_copy(original_prompts[i])[:, -1, :]
-            rewrite_logits = model_copy(rewrite_prompts[i])[:, -1, :]
-            answer_index = answer_labels[i, 1].unsqueeze(0)  # Aim for rewritten answer
-            
-            optimise_edit_components(
-                model_copy, forget_logits, rewrite_logits, answer_index, target_mlp[i], target_attn[i], optimiser
-            )
-        
-        edited_models.append(model_copy)
-
-    return edited_models
+        optimise_edit_components(
+            model_copy, forget_logits, rewrite_logits, answer_index, target_mlp[0], target_attn[0], optimiser
+        )
+    
+    return model_copy

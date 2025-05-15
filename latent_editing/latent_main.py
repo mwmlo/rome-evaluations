@@ -15,7 +15,7 @@ def apply_latent_editing_to_model(
     model: AutoModelForCausalLM,
     tok: AutoTokenizer,
     requests: List[Dict], # Should only take a single request at once
-    hparams: KNHyperParams,
+    hparams: LatentHyperParams,
     copy=False,
     return_orig_weights=False, # Does not do anything for now
 ) -> Tuple[AutoModelForCausalLM, List[str]]:
@@ -23,8 +23,8 @@ def apply_latent_editing_to_model(
     hooked_model = HookedTransformer.from_pretrained(model.config.name_or_path)
 
     request = requests[0]
-    text = [request["prompt"].format(request["subject"])]
-    corrupt_text = [request_rewrite["corrupt_prompt"]]
+    text = request["prompt"].format(request["subject"])
+    corrupt_text = request_rewrite["corrupt_prompt"]
     
     ground_truth = request_rewrite["target_true"]["str"]
     target = request_rewrite["target_new"]["str"]
@@ -32,6 +32,6 @@ def apply_latent_editing_to_model(
     target_idx = hooked_model.to_tokens(target, prepend_bos=False)[0].item()
     labels = [original_idx, target_idx]
 
-    edited_models = edit_model(hooked_model, text, corrupt_text, labels, n_epochs=hparams.n_epochs, overwrite=hparams.overwrite)
+    edited_model = edit_model(hooked_model, text, corrupt_text, labels, n_epochs=hparams.n_epochs, overwrite=hparams.overwrite)
     
-    return edited_models[0], {}
+    return edited_model, {}

@@ -8,11 +8,11 @@ dependencies:
   - cudatoolkit=11.3
   - pytorch==1.12.1
   - pip:
-    - einops==0.4.0
+    - einops
     - higher==0.2.1
     - hydra-core==1.2.0
-    - transformers==4.23.1
-    - datasets==1.18.3
+    - transformers
+    - datasets
     - matplotlib==3.6.1
     - spacy==3.4.1
     - scipy==1.9.2
