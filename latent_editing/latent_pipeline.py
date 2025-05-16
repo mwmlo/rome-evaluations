@@ -1,6 +1,7 @@
 import torch
 import math
 import copy
+import os
 from enum import Enum
 from torch import Tensor
 import torch.nn.functional as F
@@ -196,6 +197,7 @@ def edit_model(
     original_prompts: list[str],
     rewrite_prompts: list[str],
     answer_labels: Tensor,
+    sample_index: int,
     n_epochs=5,
     overwrite=False,
 ):
@@ -217,24 +219,41 @@ def edit_model(
 
     # LOCALISATION STAGE
 
-    mlp_highlighted, attn_highlighted = run_attribution_steps(
-        model,
-        original_tokens,
-        rewrite_tokens,
-        answer_labels,
-        original_cache,
-        rewrite_cache,
-        original_logit_diff,
-        rewrite_logit_diff,
-        overwrite
-    )
+    target_mlp_save_path = f"data/{sample_index}/target_mlp.pt"
+    target_attn_save_path = f"data/{sample_index}/target_attn.pt"
 
-    target_mlp = identify_target_components(mlp_highlighted).to(model.cfg.device)
-    target_attn = identify_target_components(attn_highlighted).to(model.cfg.device)
+    is_mlp_saved = os.path.exists(target_mlp_save_path)
+    is_attn_saved = os.path.exists(target_attn_save_path)
+
+    if is_mlp_saved:
+        target_mlp = torch.load(target_mlp_save_path)
+    if is_attn_saved:
+        target_attn = torch.load(target_attn_save_path)
+
+    if not is_mlp_saved and not is_mlp_saved:
+
+        mlp_highlighted, attn_highlighted = run_attribution_steps(
+            model,
+            original_tokens,
+            rewrite_tokens,
+            answer_labels,
+            original_cache,
+            rewrite_cache,
+            original_logit_diff,
+            rewrite_logit_diff,
+            overwrite
+        )
+
+        target_mlp = identify_target_components(mlp_highlighted).to(model.cfg.device)
+        target_attn = identify_target_components(attn_highlighted).to(model.cfg.device)
+
+        torch.save(target_mlp, target_mlp_save_path)
+        torch.save(target_attn, target_attn_save_path)
+
 
     # EDITING STAGE
 
-    print(f"\nFine tuning model on sample {i}...")
+    print(f"\nFine tuning model on sample {sample_index}...")
 
     model_copy = copy.deepcopy(model)
     relevant_parameters = [

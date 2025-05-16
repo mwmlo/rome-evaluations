@@ -16,6 +16,7 @@ def apply_latent_editing_to_model(
     tok: AutoTokenizer,
     requests: List[Dict], # Should only take a single request at once
     hparams: LatentHyperParams,
+    sample_index: int,
     copy=False,
     return_orig_weights=False, # Does not do anything for now
 ) -> Tuple[AutoModelForCausalLM, List[str]]:
@@ -38,6 +39,6 @@ def apply_latent_editing_to_model(
         target_idx = hooked_model.to_tokens(target, prepend_bos=False)[0].item()
         labels = torch.tensor([[original_idx, target_idx]])
 
-        edited_model = edit_model(hooked_model, text, corrupt_text, labels, n_epochs=hparams.n_epochs, overwrite=hparams.overwrite)
+        edited_model = edit_model(hooked_model, text, corrupt_text, labels, sample_index, n_epochs=hparams.n_epochs, overwrite=hparams.overwrite)
     
     return edited_model, {}
