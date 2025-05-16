@@ -46,6 +46,7 @@ def main():
             "EleutherAI/gpt-neox-20b",
             "gpt2-large",
             "gpt2-medium",
+            "gpt2-small",
             "gpt2",
         ],
     )
