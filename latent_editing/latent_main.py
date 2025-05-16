@@ -35,8 +35,8 @@ def apply_latent_editing_to_model(
         
         ground_truth = request["target_true"]["str"]
         target = request["target_new"]["str"]
-        original_idx = hooked_model.to_tokens(ground_truth, prepend_bos=False)[0].item()
-        target_idx = hooked_model.to_tokens(target, prepend_bos=False)[0].item()
+        original_idx = hooked_model.to_tokens(ground_truth, prepend_bos=False)[:, 0].item()
+        target_idx = hooked_model.to_tokens(target, prepend_bos=False)[:, 0].item()
         labels = torch.tensor([[original_idx, target_idx]])
 
         edited_model = edit_model(hooked_model, text, corrupt_text, labels, sample_index, n_epochs=hparams.n_epochs, overwrite=hparams.overwrite)
