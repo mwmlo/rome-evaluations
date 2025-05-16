@@ -3,6 +3,7 @@ from typing import List, Optional
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformer_lens import HookedTransformer
 
 from util.logit_lens import LogitLens
 
@@ -103,13 +104,22 @@ def generate_fast(
 
     with torch.no_grad():
         while input_ids.size(1) < max_out_len:  # while not exceeding max output length
-            model_out = model(
-                input_ids=input_ids[:, cur_context],
-                attention_mask=attention_mask[:, cur_context],
-                past_key_values=past_key_values,
-                use_cache=True,
-            )
-            logits, past_key_values = model_out.logits, model_out.past_key_values
+
+            if isinstance(model, HookedTransformer):
+                logits = model(
+                    input=input_ids[:, cur_context], 
+                    attention_mask=attention_mask[:, cur_context], 
+                    return_type="logits"
+                )
+            else:
+                model_out = model(
+                    input_ids=input_ids[:, cur_context],
+                    attention_mask=attention_mask[:, cur_context],
+                    past_key_values=past_key_values,
+                    use_cache=True,
+                )
+                logits, past_key_values = model_out.logits, model_out.past_key_values
+            
             softmax_out = torch.nn.functional.softmax(logits[:, -1, :], dim=1)
 
             # Top-k sampling

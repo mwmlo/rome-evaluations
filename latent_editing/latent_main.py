@@ -24,7 +24,7 @@ def apply_latent_editing_to_model(
     # Need to enable gradients for integrated gradients
     with torch.enable_grad():
 
-        hooked_model = HookedTransformer.from_pretrained(hparams.model_name)
+        hooked_model = HookedTransformer.from_pretrained_no_processing(hparams.model_name)
         # Explicitly calculate and expose the result for each attention head
         hooked_model.set_use_attn_result(True)
         hooked_model.set_use_hook_mlp_in(True)

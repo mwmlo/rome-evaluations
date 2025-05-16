@@ -144,6 +144,7 @@ def optimise_edit_components(
     """
     optimiser.zero_grad()
 
+    answer_index = answer_index.to(retain_logits.device)
     print(retain_logits.device, answer_index.device)
 
     # Calculate gradients to minimise IHL loss on forget dataset + next token prediction loss on retain dataset
@@ -219,15 +220,17 @@ def edit_model(
 
     # LOCALISATION STAGE
 
-    target_mlp_save_path = f"data/{sample_index}/target_mlp.pt"
-    target_attn_save_path = f"data/{sample_index}/target_attn.pt"
+    target_mlp_save_path = f"attribution_results/{sample_index}_target_mlp.pt"
+    target_attn_save_path = f"attribution_results/{sample_index}_target_attn.pt"
 
     is_mlp_saved = os.path.exists(target_mlp_save_path)
     is_attn_saved = os.path.exists(target_attn_save_path)
 
     if is_mlp_saved:
+        print(f"Loading saved attributions for neurons")
         target_mlp = torch.load(target_mlp_save_path)
     if is_attn_saved:
+        print(f"Loading saved attributions for attention heads")
         target_attn = torch.load(target_attn_save_path)
 
     if not is_mlp_saved and not is_mlp_saved:

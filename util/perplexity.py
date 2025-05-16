@@ -1,5 +1,6 @@
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformer_lens import HookedTransformer
 
 
 def perplexity(
@@ -17,7 +18,17 @@ def perplexity(
         [text], return_tensors="pt", max_length=max_input_length, truncation=True
     ).to("cuda")
 
-    logits = torch.nn.functional.log_softmax(model(**inputs).logits, dim=2)
+    if isinstance(model, HookedTransformer):
+        hooked_inputs = {
+            "input": inputs["input_ids"],
+            "attention_mask": inputs["attention_mask"],
+            "return_type": "logits",
+        }
+        model_outputs = model(**hooked_inputs)
+    else:
+        model_outputs = model(**inputs).logits
+
+    logits = torch.nn.functional.log_softmax(model_outputs, dim=2)
     log_probs = torch.gather(logits[:, :-1, :], 2, inputs["input_ids"][:, 1:, None])[0]
 
     # Perplexity = exp(-1/N * log P(x_1, ..., x_n))

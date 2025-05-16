@@ -1,6 +1,7 @@
 # Pipeline dumps, data directory
 results
 data
+attribution_results
 *_tmp_*_.json
 *_kmeng01g1gn*
 

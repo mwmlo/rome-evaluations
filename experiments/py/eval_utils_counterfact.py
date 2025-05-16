@@ -13,6 +13,7 @@ import scipy
 import torch
 from sklearn.feature_extraction.text import TfidfVectorizer
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformer_lens import HookedTransformer
 
 from dsets import AttributeSnippets
 from util.generate import generate_fast
@@ -126,7 +127,14 @@ def test_batch_prediction(
     choice_a_len, choice_b_len = (len(n) for n in [a_tok, b_tok])
 
     with torch.no_grad():
-        logits = model(**prompt_tok).logits
+        if isinstance(model, HookedTransformer):
+            # Use input as keyword instead of input_ids
+            prompt_tok["input"] = prompt_tok["input_ids"]
+            del prompt_tok["input_ids"]
+            prompt_tok["return_type"] = "logits"
+            logits = model(**prompt_tok)
+        else:
+            logits = model(**prompt_tok).logits
 
     results = np.zeros((logits.size(0),), dtype=np.float32)
 
