@@ -31,12 +31,10 @@ def run_attribution_steps(
     rewrite_cache: ActivationCache,
     original_logit_diff: Tensor,
     rewrite_logit_diff: Tensor,
-    overwrite=False,
 ):
     """
     Run three types of attribution methods on the given data samples.
     Returns a dictionary of highlighted components per attribution method, for MLP and attention heads each.
-    Warning: do not use "overwrite" if working with many batches - inefficient!
     """
     mlp_attribution_highlights = dict()
     attn_attribution_highlights = dict()
@@ -134,7 +132,7 @@ def optimise_edit_components(
     model: HookedTransformer,
     forget_logits: Tensor,
     retain_logits: Tensor,
-    answer_index: Tensor,
+    answer_indices: Tensor,
     target_mlp_components: Tensor,
     target_attn_components: Tensor,
     optimiser: optim.Optimizer,
@@ -144,63 +142,73 @@ def optimise_edit_components(
     """
     optimiser.zero_grad()
 
-    answer_index = answer_index.to(retain_logits.device)
-    print(retain_logits.device, answer_index.device)
+    # Decrease prediction score on original token
+    loss_forget = inverted_hinge_loss(forget_logits, answer_indices[:, 0])
+    # Make prediction probability distribution similar to predictions given rewritten prompt
+    loss_rewrite = F.cross_entropy(retain_logits, answer_indices[:, 1], reduction="sum")
 
-    # Calculate gradients to minimise IHL loss on forget dataset + next token prediction loss on retain dataset
-    loss = inverted_hinge_loss(forget_logits, answer_index) + F.cross_entropy(
-        retain_logits, answer_index, reduction="sum"
-    )
-    print(f"Loss: {loss}")
+    kl_loss = torch.nn.KLDivLoss(reduction="batchmean")
+    forget_log_prob = F.log_softmax(forget_logits, dim=1)
+    rewrite_prob = F.softmax(retain_logits, dim=1)
+    loss_fluency = kl_loss(forget_log_prob, rewrite_prob)
+
+    # Because the rewrite output might not match the rewrite target token, we do not try to match the probability distribution exactly
+    loss = loss_forget + loss_rewrite + 0.5 * loss_fluency
+    print(f"Total loss: {loss}, forget loss: {loss_forget}, rewrite loss: {loss_rewrite}, fluency loss: {loss_fluency}")
+
     loss.backward()
 
     # Mask out gradients at non-target components
-    for layer_idx in range(model.cfg.n_layers):
-        # Attention components: W_K, W_Q, W_V, W_O matrices
-        # Match attention weight shape [n_heads, d_model, d_head] or [n_heads, d_head, d_model]
-        layer_attn_weight_mask = target_attn_components[:, layer_idx].view(
-            model.cfg.n_heads, 1, 1
-        )
-        # Match attention bias shape [n_heads, d_head]
-        layer_attn_bias_mask = target_attn_components[:, layer_idx].view(
-            model.cfg.n_heads, 1
-        )
+    with torch.no_grad():
+        for layer_idx in range(model.cfg.n_layers):
+            # Attention components: W_K, W_Q, W_V, W_O matrices
+            # Match attention weight shape [n_heads, d_model, d_head] or [n_heads, d_head, d_model]
+            layer_attn_weight_mask = target_attn_components[:, layer_idx].view(
+                model.cfg.n_heads, 1, 1
+            )
+            # Match attention bias shape [n_heads, d_head]
+            layer_attn_bias_mask = target_attn_components[:, layer_idx].view(
+                model.cfg.n_heads, 1
+            )
 
-        model.blocks[layer_idx].attn.W_K.grad *= layer_attn_weight_mask  # shape []
-        model.blocks[layer_idx].attn.b_K.grad *= layer_attn_bias_mask
+            model.blocks[layer_idx].attn.W_K.grad *= layer_attn_weight_mask  # shape []
+            model.blocks[layer_idx].attn.b_K.grad *= layer_attn_bias_mask
 
-        model.blocks[layer_idx].attn.W_Q.grad *= layer_attn_weight_mask
-        model.blocks[layer_idx].attn.b_Q.grad *= layer_attn_bias_mask
+            model.blocks[layer_idx].attn.W_Q.grad *= layer_attn_weight_mask
+            model.blocks[layer_idx].attn.b_Q.grad *= layer_attn_bias_mask
 
-        model.blocks[layer_idx].attn.W_V.grad *= layer_attn_weight_mask
-        model.blocks[layer_idx].attn.b_V.grad *= layer_attn_bias_mask
+            model.blocks[layer_idx].attn.W_V.grad *= layer_attn_weight_mask
+            model.blocks[layer_idx].attn.b_V.grad *= layer_attn_bias_mask
 
-        model.blocks[layer_idx].attn.W_O.grad *= layer_attn_weight_mask
-        # Attention output biases of shape [d_model,] - no need to mask on specific head
+            model.blocks[layer_idx].attn.W_O.grad *= layer_attn_weight_mask
+            # Attention output biases of shape [d_model,] - no need to mask on specific head
 
-        # MLP neuron components: W_in, W_out matrices
-        layer_mlp_mask = target_mlp_components[layer_idx]  # shape [d_mlp,]
-        model.blocks[layer_idx].mlp.W_in.grad *= layer_mlp_mask.view(
-            1, model.cfg.d_mlp
-        )  # shape [d_model, d_mlp]
-        model.blocks[layer_idx].mlp.W_out.grad *= layer_mlp_mask.view(
-            model.cfg.d_mlp, 1
-        )  # shape [d_mlp, d_model]
-        model.blocks[layer_idx].mlp.b_in.grad *= layer_mlp_mask  # shape [d_mlp,]
-        # MLP output biases of shape [d_model,] - no need to mask on specific neuron
+            # MLP neuron components: W_in, W_out matrices
+            layer_mlp_mask = target_mlp_components[layer_idx]  # shape [d_mlp,]
+            model.blocks[layer_idx].mlp.W_in.grad *= layer_mlp_mask.view(
+                1, model.cfg.d_mlp
+            )  # shape [d_model, d_mlp]
+            model.blocks[layer_idx].mlp.W_out.grad *= layer_mlp_mask.view(
+                model.cfg.d_mlp, 1
+            )  # shape [d_mlp, d_model]
+            model.blocks[layer_idx].mlp.b_in.grad *= layer_mlp_mask  # shape [d_mlp,]
+            # MLP output biases of shape [d_model,] - no need to mask on specific neuron
+
+    # Gradient clipping and step
+    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 
     # Update weights using optimiser
     optimiser.step()
 
+    return loss
 
-def edit_model(
+
+def localise_model(
     model: HookedTransformer,
     original_prompts: list[str],
     rewrite_prompts: list[str],
     answer_labels: Tensor,
     sample_index: int,
-    n_epochs=5,
-    overwrite=False,
 ):
     assert len(original_prompts) == len(rewrite_prompts), f"Must have same number of prompts"
     n_samples = len(original_prompts)
@@ -208,15 +216,12 @@ def edit_model(
     # Tokenise all together to ensure shapes stay the same
     tokenised = model.to_tokens(original_prompts + rewrite_prompts, prepend_bos=False)
     original_tokens, rewrite_tokens = [tokenised[i:i + n_samples] for i in range(0, len(tokenised), n_samples)]
-    print(n_samples, original_tokens.shape, rewrite_tokens.shape)
 
     original_logits, original_cache = model.run_with_cache(original_tokens)
     original_logit_diff = logit_diff_metric(original_logits, answer_labels)
-    # print(f"Original logit difference: {original_logit_diff}")
 
     rewrite_logits, rewrite_cache = model.run_with_cache(rewrite_tokens)
     rewrite_logit_diff = logit_diff_metric(rewrite_logits, answer_labels)
-    # print(f"Rewrite logit difference: {rewrite_logit_diff}")
 
     # LOCALISATION STAGE
 
@@ -243,8 +248,7 @@ def edit_model(
             original_cache,
             rewrite_cache,
             original_logit_diff,
-            rewrite_logit_diff,
-            overwrite
+            rewrite_logit_diff
         )
 
         target_mlp = identify_target_components(mlp_highlighted).to(model.cfg.device)
@@ -253,24 +257,36 @@ def edit_model(
         torch.save(target_mlp, target_mlp_save_path)
         torch.save(target_attn, target_attn_save_path)
 
+    return target_mlp[0], target_attn[0]
 
-    # EDITING STAGE
 
-    print(f"\nFine tuning model on sample {sample_index}...")
-
+def edit_model(
+    model: HookedTransformer,
+    original_prompt: str,
+    rewrite_prompt: str,
+    answer_labels: Tensor,
+    target_mlp: Tensor,
+    target_attn: Tensor,
+) -> HookedTransformer:
+    print(f"\nFine tuning model...")
     model_copy = copy.deepcopy(model)
     relevant_parameters = [
         p for name, p in model_copy.named_parameters() if "attn" in name or "mlp" in name
     ]
-    optimiser = optim.Adam(relevant_parameters, lr=2e-4)
+    optimiser = optim.AdamW(relevant_parameters, lr=3e-4)
     
-    for _ in range(n_epochs):
-        forget_logits = model_copy(original_prompts[0])[:, -1, :]
-        rewrite_logits = model_copy(original_prompts[0])[:, -1, :]
-        answer_index = answer_labels[:, 1]  # Aim for rewritten answer
+    # Fine tune until loss is below threshold
+    loss = math.inf
+    max_epochs = 10
+    n = 0
+    while loss > 1.5 and n < max_epochs:
+        forget_logits = model_copy(original_prompt)[:, -1, :]
+        rewrite_logits = model_copy(rewrite_prompt)[:, -1, :]
+        # answer_index = answer_labels[i, 1].unsqueeze(0)  # Aim for rewritten answer
         
-        optimise_edit_components(
-            model_copy, forget_logits, rewrite_logits, answer_index, target_mlp[0], target_attn[0], optimiser
+        loss = optimise_edit_components(
+            model_copy, forget_logits, rewrite_logits, answer_labels, target_mlp, target_attn, optimiser
         )
-    
+        n += 1
+
     return model_copy

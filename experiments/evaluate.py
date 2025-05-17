@@ -11,6 +11,7 @@ from typing import Tuple, Union
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformer_lens import HookedTransformer
 
 from baselines.ft import FTHyperParams, apply_ft_to_model
 from baselines.kn import KNHyperParams, apply_kn_to_model
@@ -117,6 +118,13 @@ def main(
             )
 
             if alg_name == "LATENT":
+
+                # Use HookedTransformer instead of HF model
+                model = HookedTransformer.from_pretrained_no_processing(hparams.model_name)
+                # Explicitly calculate and expose the result for each attention head
+                model.set_use_attn_result(True)
+                model.set_use_hook_mlp_in(True)
+            
                 template = record["requested_rewrite"]["prompt"]
                 # Get list of corrupt candidate prompts
                 corrupt_prompts = record["attribute_prompts"]
@@ -135,7 +143,6 @@ def main(
                 record["requested_rewrite"]["corrupt_prompt"] = corrupt_prompt
                 edited_model, weights_copy = apply_algo(
                     model,
-                    tok,
                     [record["requested_rewrite"]],
                     hparams,
                     case_id,

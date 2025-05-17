@@ -96,6 +96,16 @@ def generate_fast(
     input_ids, attention_mask = inp_tok["input_ids"], inp_tok["attention_mask"]
     batch_size = input_ids.size(0)
 
+    if isinstance(model, HookedTransformer):
+        txt = [model.generate(prompt, do_sample=False) for prompt in prompts for _ in range(n_gen_per_prompt)]
+        txt = [
+            unicodedata.normalize("NFKD", x)
+            .replace("\n\n", " ")
+            .replace("<|endoftext|>", "")
+            for x in txt
+        ]
+        return txt
+
     # Setup storage of fast generation with attention caches.
     # `cur_context` is used to define the range of inputs that are not yet
     # stored in `past_key_values`. At each step, we are generating the
@@ -105,20 +115,13 @@ def generate_fast(
     with torch.no_grad():
         while input_ids.size(1) < max_out_len:  # while not exceeding max output length
 
-            if isinstance(model, HookedTransformer):
-                logits = model(
-                    input=input_ids[:, cur_context], 
-                    attention_mask=attention_mask[:, cur_context], 
-                    return_type="logits"
-                )
-            else:
-                model_out = model(
-                    input_ids=input_ids[:, cur_context],
-                    attention_mask=attention_mask[:, cur_context],
-                    past_key_values=past_key_values,
-                    use_cache=True,
-                )
-                logits, past_key_values = model_out.logits, model_out.past_key_values
+            model_out = model(
+                input_ids=input_ids[:, cur_context],
+                attention_mask=attention_mask[:, cur_context],
+                past_key_values=past_key_values,
+                use_cache=True,
+            )
+            logits, past_key_values = model_out.logits, model_out.past_key_values
             
             softmax_out = torch.nn.functional.softmax(logits[:, -1, :], dim=1)
 

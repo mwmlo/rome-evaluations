@@ -8,37 +8,36 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformer_lens import HookedTransformer
 
 from .latent_hparams import LatentHyperParams
-from .latent_pipeline import edit_model
+from .latent_pipeline import localise_model, edit_model
 
 
 def apply_latent_editing_to_model(
-    model: AutoModelForCausalLM,
-    tok: AutoTokenizer,
+    model: HookedTransformer,
     requests: List[Dict], # Should only take a single request at once
     hparams: LatentHyperParams,
     sample_index: int,
     copy=False,
     return_orig_weights=False, # Does not do anything for now
-) -> Tuple[AutoModelForCausalLM, List[str]]:
+) -> Tuple[HookedTransformer, List[str]]:
+
+    assert len(requests) == 1, f"Can only edit for one request at a time"
+    request = requests[0]
+
+    text = [request["prompt"].format(request["subject"])]
+    corrupt_text = [request["corrupt_prompt"]]
+    
+    ground_truth = request["target_true"]["str"]
+    target = request["target_new"]["str"]
+    original_idx = model.to_tokens(ground_truth, prepend_bos=False)[:, 0].item()
+    target_idx = model.to_tokens(target, prepend_bos=False)[:, 0].item()
+    labels = torch.tensor([[original_idx, target_idx]])
 
     # Need to enable gradients for integrated gradients
     with torch.enable_grad():
-
-        hooked_model = HookedTransformer.from_pretrained_no_processing(hparams.model_name)
-        # Explicitly calculate and expose the result for each attention head
-        hooked_model.set_use_attn_result(True)
-        hooked_model.set_use_hook_mlp_in(True)
-
-        request = requests[0]
-        text = [request["prompt"].format(request["subject"])]
-        corrupt_text = [request["corrupt_prompt"]]
-        
-        ground_truth = request["target_true"]["str"]
-        target = request["target_new"]["str"]
-        original_idx = hooked_model.to_tokens(ground_truth, prepend_bos=False)[:, 0].item()
-        target_idx = hooked_model.to_tokens(target, prepend_bos=False)[:, 0].item()
-        labels = torch.tensor([[original_idx, target_idx]])
-
-        edited_model = edit_model(hooked_model, text, corrupt_text, labels, sample_index, n_epochs=hparams.n_epochs, overwrite=hparams.overwrite)
+        print("Calculating attributions")
+        target_mlp, target_attn = localise_model(model, text, corrupt_text, labels, sample_index)
+    
+    labels = labels.to(model.cfg.device)
+    edited_model = edit_model(model, text, corrupt_text, labels, target_mlp, target_attn)
     
     return edited_model, {}
