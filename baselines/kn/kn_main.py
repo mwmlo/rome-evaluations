@@ -17,6 +17,8 @@ def apply_kn_to_model(
     copy=False,
     return_orig_weights=False,
 ) -> Tuple[AutoModelForCausalLM, List[str]]:
+    
+    assert len(request) == 1, "KN only supports one request at a time"
 
     kn = KnowledgeNeurons(
         model,
@@ -24,7 +26,7 @@ def apply_kn_to_model(
         model_type=model_type(hparams.model_name),
         device="cuda",
     )
-    request_rewrite = deepcopy(request)
+    request_rewrite = deepcopy(request[0])
     text = [request_rewrite["prompt"].format(request_rewrite["subject"])]
     ground_truth = request_rewrite["target_true"]["str"]
     target = request_rewrite["target_new"]["str"]
