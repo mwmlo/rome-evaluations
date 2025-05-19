@@ -13,6 +13,7 @@ from .latent_pipeline import localise_model, edit_model
 
 def apply_latent_editing_to_model(
     model: HookedTransformer,
+    tok, # Unused
     requests: List[Dict], # Should only take a single request at once
     hparams: LatentHyperParams,
     sample_index: int,

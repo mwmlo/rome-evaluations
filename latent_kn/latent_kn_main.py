@@ -6,9 +6,10 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformer_lens import HookedTransformer
 
-from .kn_hparams import KNHyperParams
-from .knowledge_neurons.knowledge_neurons import KnowledgeNeurons, model_type
+from baselines.kn.kn_hparams import KNHyperParams
+from baselines.kn.knowledge_neurons.knowledge_neurons import KnowledgeNeurons, model_type
 
+from latent_editing import localise_model
 
 def apply_latent_kn_to_model(
     model: AutoModelForCausalLM,

@@ -144,9 +144,10 @@ def main(
 
                 # Add corrupt prompt to inputs
                 record["requested_rewrite"]["corrupt_prompt"] = corrupt_prompt
-                
+
                 edited_model, weights_copy = apply_algo(
                     model,
+                    tok,
                     [record["requested_rewrite"]],
                     hparams,
                     case_id,
@@ -194,7 +195,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--alg_name",
-        choices=["ROME", "FT", "KN", "MEND", "KE", "LATENT"],
+        choices=["ROME", "FT", "KN", "MEND", "KE", "LATENT", "LATENT_KN"],
         default="ROME",
         help="Editing algorithm to use. Results are saved in results/<alg_name>/<run_id>, "
         "where a new run_id is generated on each run. "
