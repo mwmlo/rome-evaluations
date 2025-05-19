@@ -25,6 +25,7 @@ from experiments.py.eval_utils_counterfact import compute_rewrite_quality_counte
 from experiments.py.eval_utils_zsre import compute_rewrite_quality_zsre
 from rome import ROMEHyperParams, apply_rome_to_model
 from latent_editing import LatentHyperParams, apply_latent_editing_to_model
+from latent_kn import apply_latent_kn_to_model
 from util import nethook
 from util.globals import *
 
@@ -33,6 +34,7 @@ ALG_DICT = {
     "FT": (FTHyperParams, apply_ft_to_model),
     "KN": (KNHyperParams, apply_kn_to_model),
     "LATENT": (LatentHyperParams, apply_latent_editing_to_model),
+    "LATENT_KN": (KNHyperParams, apply_latent_kn_to_model),
 }
 
 DS_DICT = {
@@ -117,13 +119,14 @@ def main(
                 else dict()
             )
 
-            if alg_name == "LATENT":
+            if alg_name == "LATENT" or alg_name == "LATENT_KN":
 
-                # Use HookedTransformer instead of HF model
-                model = HookedTransformer.from_pretrained_no_processing(hparams.model_name)
-                # Explicitly calculate and expose the result for each attention head
-                model.set_use_attn_result(True)
-                model.set_use_hook_mlp_in(True)
+                if alg_name == "LATENT":
+                    # Use HookedTransformer instead of HF model
+                    model = HookedTransformer.from_pretrained_no_processing(hparams.model_name)
+                    # Explicitly calculate and expose the result for each attention head
+                    model.set_use_attn_result(True)
+                    model.set_use_hook_mlp_in(True)
             
                 template = record["requested_rewrite"]["prompt"]
                 # Get list of corrupt candidate prompts
@@ -141,6 +144,7 @@ def main(
 
                 # Add corrupt prompt to inputs
                 record["requested_rewrite"]["corrupt_prompt"] = corrupt_prompt
+                
                 edited_model, weights_copy = apply_algo(
                     model,
                     [record["requested_rewrite"]],
