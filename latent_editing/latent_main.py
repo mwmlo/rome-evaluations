@@ -34,11 +34,15 @@ def apply_latent_editing_to_model(
     labels = torch.tensor([[original_idx, target_idx]])
 
     # Need to enable gradients for integrated gradients
-    with torch.enable_grad():
-        print("Calculating attributions")
-        target_mlp, target_attn = localise_model(model, text, corrupt_text, labels, sample_index)
+    if hparams.localise:
+        with torch.enable_grad():
+            print("Calculating attributions")
+            target_mlp, target_attn = localise_model(model, text, corrupt_text, labels, sample_index)
+    else:
+        print("Evaluating baseline: no localisation, just fine tuning!")
+        target_mlp, target_attn = None, None
     
     labels = labels.to(model.cfg.device)
-    edited_model = edit_model(model, text, corrupt_text, labels, target_mlp, target_attn)
+    edited_model = edit_model(model, text, corrupt_text, labels, target_mlp, target_attn, hparams.localise)
     
     return edited_model, {}

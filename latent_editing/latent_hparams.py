@@ -7,3 +7,4 @@ class LatentHyperParams(HyperParams):
     model_name: str
     n_epochs: int
     overwrite: bool
+    localise: bool = True
