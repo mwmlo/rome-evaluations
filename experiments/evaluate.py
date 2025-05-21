@@ -188,6 +188,11 @@ def main(
             with open(case_result_path, "w") as f:
                 json.dump(metrics, f, indent=1)
 
+            # Free up memory
+            del model
+            del edited_model
+            torch.cuda.empty_cache()
+
 
 if __name__ == "__main__":
     import argparse
