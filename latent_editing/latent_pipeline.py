@@ -13,6 +13,7 @@ from .latent_utils import (
     integrated_gradients,
     activation_patching,
     highlight_components,
+    asymmetry_score,
 )
 
 
@@ -34,10 +35,10 @@ def run_attribution_steps(
 ):
     """
     Run three types of attribution methods on the given data samples.
-    Returns a dictionary of highlighted components per attribution method, for MLP and attention heads each.
+    Returns a dictionary of attribution scores for each component per attribution method, for MLP and attention heads each.
     """
-    mlp_attribution_highlights = dict()
-    attn_attribution_highlights = dict()
+    mlp_attribution_scores = dict()
+    attn_attribution_scores = dict()
 
     # Run integrated gradients with original baseline and rewrite input
     ig_original_rewrite_mlp, ig_original_rewrite_attn = integrated_gradients(
@@ -49,12 +50,8 @@ def run_attribution_steps(
         answer_labels,
     )
 
-    mlp_attribution_highlights[AttributionMethod.IG_ORIGINAL_REWRITE], _ = (
-        highlight_components(ig_original_rewrite_mlp)
-    )
-    attn_attribution_highlights[AttributionMethod.IG_ORIGINAL_REWRITE], _ = (
-        highlight_components(ig_original_rewrite_attn)
-    )
+    mlp_attribution_scores[AttributionMethod.IG_ORIGINAL_REWRITE] = ig_original_rewrite_mlp
+    attn_attribution_scores[AttributionMethod.IG_ORIGINAL_REWRITE] = ig_original_rewrite_attn
 
     # Run integrated gradients with rewrite baseline and original input
     ig_rewrite_original_mlp, ig_rewrite_original_attn = integrated_gradients(
@@ -66,53 +63,49 @@ def run_attribution_steps(
         answer_labels,
     )
 
-    mlp_attribution_highlights[AttributionMethod.IG_REWRITE_ORIGINAL], _ = (
-        highlight_components(ig_rewrite_original_mlp)
-    )
-    attn_attribution_highlights[AttributionMethod.IG_REWRITE_ORIGINAL], _ = (
-        highlight_components(ig_rewrite_original_attn)
-    )
+    mlp_attribution_scores[AttributionMethod.IG_REWRITE_ORIGINAL] = ig_rewrite_original_mlp
+    attn_attribution_scores[AttributionMethod.IG_REWRITE_ORIGINAL] = ig_rewrite_original_attn
 
     # Run activation patching from rewrite (corrupt) to original (clean) activations
-    ap_mlp, ap_attn = activation_patching(
-        model,
-        original_tokens,
-        original_logit_diff,
-        rewrite_cache,
-        rewrite_logit_diff,
-        logit_diff_metric,
-        answer_labels,
-    )
+    # ap_mlp, ap_attn = activation_patching(
+    #     model,
+    #     original_tokens,
+    #     original_logit_diff,
+    #     rewrite_cache,
+    #     rewrite_logit_diff,
+    #     logit_diff_metric,
+    #     answer_labels,
+    # )
 
-    mlp_attribution_highlights[AttributionMethod.AP_ORIGINAL_REWRITE], _ = (
-        highlight_components(ap_mlp)
-    )
-    attn_attribution_highlights[AttributionMethod.AP_ORIGINAL_REWRITE], _ = (
-        highlight_components(ap_attn)
-    )
+    # mlp_attribution_highlights[AttributionMethod.AP_ORIGINAL_REWRITE], _ = (
+    #     highlight_components(ap_mlp)
+    # )
+    # attn_attribution_highlights[AttributionMethod.AP_ORIGINAL_REWRITE], _ = (
+    #     highlight_components(ap_attn)
+    # )
 
-    return mlp_attribution_highlights, attn_attribution_highlights
+    return mlp_attribution_scores, attn_attribution_scores
 
 
-def identify_target_components(highlighted_dict: dict):
-    ig_rewrite_original_highlighted = highlighted_dict[
+def identify_target_components(attribution_scores: dict):
+    ig_rewrite_original_scores = attribution_scores[
         AttributionMethod.IG_REWRITE_ORIGINAL
     ]
-    ig_original_rewrite_highlighted = highlighted_dict[
+    ig_original_rewrite_scores = attribution_scores[
         AttributionMethod.IG_ORIGINAL_REWRITE
     ]
-    ap_highlighted = highlighted_dict[AttributionMethod.AP_ORIGINAL_REWRITE]
+    # ap_highlighted = highlighted_dict[AttributionMethod.AP_ORIGINAL_REWRITE]
 
     # Identify minimal components as those with high attribution scores in both IG and AP.
-    minimal_components = ig_rewrite_original_highlighted & ap_highlighted
+    # minimal_components = ig_rewrite_original_highlighted & ap_highlighted
 
     # Identify latent components as those with high attribution scores in only one direction of IG.
-    latent_components = (
-        ig_rewrite_original_highlighted ^ ig_original_rewrite_highlighted
-    )
+    asymmetry_scores = asymmetry_score(ig_rewrite_original_scores, ig_original_rewrite_scores, is_ig=True)
+    latent_components = highlight_components(asymmetry_scores)[0]
+    return latent_components
 
     # Get union of minimal and latent components
-    return minimal_components | latent_components
+    # return minimal_components | latent_components
 
 
 def inverted_hinge_loss(output_logits, target_index):
@@ -233,31 +226,31 @@ def localise_model(
     is_mlp_saved = os.path.exists(target_mlp_save_path)
     is_attn_saved = os.path.exists(target_attn_save_path)
 
-    if is_mlp_saved:
-        print(f"Loading saved attributions for neurons")
-        target_mlp = torch.load(target_mlp_save_path)
-    if is_attn_saved:
-        print(f"Loading saved attributions for attention heads")
-        target_attn = torch.load(target_attn_save_path)
+    # if is_mlp_saved:
+    #     print(f"Loading saved attributions for neurons")
+    #     target_mlp = torch.load(target_mlp_save_path)
+    # if is_attn_saved:
+    #     print(f"Loading saved attributions for attention heads")
+    #     target_attn = torch.load(target_attn_save_path)
 
-    if not is_mlp_saved and not is_mlp_saved:
+    # if not is_mlp_saved and not is_mlp_saved:
 
-        mlp_highlighted, attn_highlighted = run_attribution_steps(
-            model,
-            original_tokens,
-            rewrite_tokens,
-            answer_labels,
-            original_cache,
-            rewrite_cache,
-            original_logit_diff,
-            rewrite_logit_diff
-        )
+    mlp_attribution_scores, attn_attribution_scores = run_attribution_steps(
+        model,
+        original_tokens,
+        rewrite_tokens,
+        answer_labels,
+        original_cache,
+        rewrite_cache,
+        original_logit_diff,
+        rewrite_logit_diff
+    )
 
-        target_mlp = identify_target_components(mlp_highlighted).to(model.cfg.device)
-        target_attn = identify_target_components(attn_highlighted).to(model.cfg.device)
+    target_mlp = identify_target_components(mlp_attribution_scores).to(model.cfg.device)
+    target_attn = identify_target_components(attn_attribution_scores).to(model.cfg.device)
 
-        torch.save(target_mlp, target_mlp_save_path)
-        torch.save(target_attn, target_attn_save_path)
+    torch.save(target_mlp, target_mlp_save_path)
+    torch.save(target_attn, target_attn_save_path)
 
     return target_mlp[0], target_attn[0]
 

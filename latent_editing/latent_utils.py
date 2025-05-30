@@ -254,3 +254,16 @@ def logit_diff_metric(logits, metric_labels):
     correct_logits = logits_last[torch.arange(batch_size), correct_index]
     incorrect_logits = logits_last[torch.arange(batch_size), incorrect_index]
     return correct_logits - incorrect_logits
+
+
+def asymmetry_score(corrupt_clean: Tensor, clean_corrupt: Tensor, is_ig: bool):
+    assert corrupt_clean.shape == clean_corrupt.shape, \
+        f"Cannot calculate asymmetry between matrices of different shapes, {corrupt_clean.shape} and {clean_corrupt.shape}"
+
+    if is_ig:
+        # Expect opposite directions to cancel out attribution scores
+        max_scores = torch.amax((corrupt_clean + clean_corrupt), dim=(1,2), keepdim=True)
+        return torch.div((corrupt_clean + clean_corrupt), max_scores)
+    
+    max_scores = torch.amax((corrupt_clean - clean_corrupt), dim=(1,2), keepdim=True)
+    return torch.div((corrupt_clean - clean_corrupt), max_scores)

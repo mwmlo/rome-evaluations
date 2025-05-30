@@ -8,3 +8,4 @@ class LatentHyperParams(HyperParams):
     n_epochs: int
     overwrite: bool
     localise: bool = True
+    include_latent: bool = True
