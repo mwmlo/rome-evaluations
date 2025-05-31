@@ -1,5 +1,5 @@
 {
     "model_name": "gpt2-small",
     "n_epochs": 5,
-    "overwrite": true
+    "overwrite": false
 }

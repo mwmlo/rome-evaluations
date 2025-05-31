@@ -33,16 +33,18 @@ def apply_latent_editing_to_model(
     target_idx = model.to_tokens(target, prepend_bos=False)[:, 0].item()
     labels = torch.tensor([[original_idx, target_idx]])
 
+    paraphrased_text = request.get("paraphrase_prompts", [])
+
     # Need to enable gradients for integrated gradients
     if hparams.localise:
         with torch.enable_grad():
             print("Calculating attributions")
-            target_mlp, target_attn = localise_model(model, text, corrupt_text, labels, sample_index)
+            target_mlp, target_attn = localise_model(model, text, corrupt_text, labels, sample_index, hparams.overwrite)
     else:
         print("Evaluating baseline: no localisation, just fine tuning!")
         target_mlp, target_attn = None, None
     
     labels = labels.to(model.cfg.device)
-    edited_model = edit_model(model, text, corrupt_text, labels, target_mlp, target_attn, hparams.localise)
+    edited_model = edit_model(model, text, corrupt_text, labels, paraphrased_text, target_mlp[0], target_attn[0], hparams.localise)
     
     return edited_model, {}

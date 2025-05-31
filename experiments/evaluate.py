@@ -125,8 +125,11 @@ def main(
                     # Use HookedTransformer instead of HF model
                     model = HookedTransformer.from_pretrained_no_processing(hparams.model_name)
                     # Explicitly calculate and expose the result for each attention head
-                    model.set_use_attn_result(True)
-                    model.set_use_hook_mlp_in(True)
+                    model.cfg.use_split_qkv_input = True
+                    model.cfg.use_attn_result = True
+                    model.cfg.use_hook_mlp_in = True
+                    model.cfg.ungroup_grouped_query_attention = True
+
             
                 template = record["requested_rewrite"]["prompt"]
                 # Get list of corrupt candidate prompts
@@ -144,6 +147,10 @@ def main(
 
                 # Add corrupt prompt to inputs
                 record["requested_rewrite"]["corrupt_prompt"] = corrupt_prompt
+
+                # Add paraphrase and attribute prompts
+                paraphrased_prompets = record.get("paraphrase_prompts", [])
+                record["requested_rewrite"]["paraphrase_prompts"] = paraphrased_prompets
 
                 edited_model, weights_copy = apply_algo(
                     model,
